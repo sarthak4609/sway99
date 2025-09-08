@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SWAY STOCKS BY LEOZERA</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root {
+  --bg:#0f1115; --card:#171a21; --text:#e8ecf1; --muted:#9aa4b2;
+  --up:#22c55e; --down:#ef4444; --border:#222838;
+}
+body {
+  font-family:system-ui, sans-serif; margin:0; padding:0;
+  background:var(--bg); color:var(--text);
+}
+header {
+  background:#0b0d12; color:#fff; padding:16px;
+  text-align:center; font-size:1.3rem; font-weight:700;
+  border-bottom:1px solid var(--border);
+}
+nav {
+  background:#0b0d12; display:flex; gap:10px; padding:10px 12px;
+  border-bottom:1px solid var(--border);
+}
+nav button {
+  padding:10px 16px; border:1px solid #2a3042; background:#151925;
+  color:var(--text); border-radius:10px; cursor:pointer;
+}
+nav button:hover { background:#1a2030; }
+.container { padding:18px; }
+.screen { display:none; }
+.active { display:block; }
+table {
+  width:100%; border-collapse:collapse; margin-top:16px;
+  background:var(--card); border-radius:10px; overflow:hidden;
+}
+th,td { border-bottom:1px solid var(--border); padding:10px; text-align:center; }
+th { background:#111521; color:#c9d2e3; font-weight:600; }
+tr:nth-child(even) td { background:#1a1d27; }
+.green { color:var(--up); font-weight:600; }
+.red { color:var(--down); font-weight:600; }
+.btn {
+  padding:8px 12px; margin:0 4px; border-radius:10px; cursor:pointer;
+  background:#151925; color:var(--text); border:1px solid #2a3042;
+}
+.btn:hover { background:#1a2030; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; margin-top:16px; }
+.card {
+  background:var(--card); border:1px solid #202638; border-radius:14px;
+  padding:12px; box-shadow:0 2px 6px rgba(0,0,0,0.4);
+}
+canvas { background:#0b0d12; border-radius:10px; }
+.right { margin-left:auto; }
+</style>
+</head>
+<body>
+<header>SWAY STOCKS BY LEOZERA</header>
+<nav id="topnav" class="hidden">
+  <button data-target="participants" id="participantsTab" class="hidden">Participants</button>
+  <button data-target="judge" id="judgeTab" class="hidden">Judge</button>
+  <button data-target="main">Main Screen</button>
+  <button id="logout" class="right">Logout</button>
+</nav>
+<div class="container">
+
+<!-- Login -->
+<section id="auth" class="screen active">
+  <h2>Login</h2>
+  <select id="role">
+    <option value="participant">Participant</option>
+    <option value="judge">Judge</option>
+  </select><br><br>
+  <input id="username" placeholder="Username"/><br><br>
+  <input id="password" type="password" placeholder="Password"/><br><br>
+  <button class="btn" id="loginBtn">Login</button>
+</section>
+
+<!-- Placeholder for dynamic screens -->
+<div id="dynamicScreens"></div>
+
+<!-- Main Screen -->
+<section id="main" class="screen">
+  <h2>Market Overview</h2>
+  <table id="mainTable"></table>
+  <div class="grid" id="mainCharts"></div>
+</section>
+</div>
+
+<script>
+const STARTING_BALANCE = 100000;
+let currentUser = null;
+let mainCharts = {};
+let users = {};
+let stocks = [
+  {id:'STK1', name:'Stock 1', price:100, prevPrice:100, supply:1000, history:[100]},
+  {id:'STK2', name:'Stock 2', price:100, prevPrice:100, supply:1000, history:[100]}
+];
+
+// Fixed users
+const credentials = {
+  "LEOSWAY": {role:"judge", password:"99397962"},
+  "Conrad": {role:"participant", password:"P9363751"},
+  "Geralt": {role:"participant", password:"P0863770"},
+  "Potter": {role:"participant", password:"P3169385"},
+  "Darcy": {role:"participant", password:"P9602843"},
+  "Cullen": {role:"participant", password:"P6103647"},
+  "Stark": {role:"participant", password:"P8484144"},
+  "Percy": {role:"participant", password:"P4397616"},
+  "Paro": {role:"participant", password:"P4951979"}
+};
+for (let u in credentials) {
+  users[u] = {role:credentials[u].role, password:credentials[u].password, balance:STARTING_BALANCE, holdings:{}};
+}
+
+function show(screenId) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+}
+
+function formatINR(n){return new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);}
+
+// ========== Trading ==========
+function buy(stockId, qty){
+  qty=Math.max(1,Math.floor(qty||0));
+  const s=stocks.find(x=>x.id===stockId);
+  const user=users[currentUser.username];
+  if(s.supply<qty){alert('Not enough supply available');return;}
+  const cost=s.price*qty;
+  if(user.balance<cost){alert('Insufficient balance');return;}
+  user.balance-=cost;
+  s.supply-=qty;
+  user.holdings[stockId]=(user.holdings[stockId]||0)+qty;
+  renderAll();
+}
+function sell(stockId, qty){
+  qty=Math.max(1,Math.floor(qty||0));
+  const s=stocks.find(x=>x.id===stockId);
+  const user=users[currentUser.username];
+  const owned=user.holdings[stockId]||0;
+  if(owned<qty){alert('Not enough shares');return;}
+  user.holdings[stockId]-=qty;
+  s.supply+=qty;
+  user.balance+=s.price*qty;
+  renderAll();
+}
+function changePrice(stockId,newPrice){
+  const s=stocks.find(x=>x.id===stockId);
+  s.prevPrice=s.price; s.price=newPrice; s.history.push(newPrice);
+  updateCharts();
+  renderAll();
+}
+function changeSupply(stockId,newSupply){
+  const s=stocks.find(x=>x.id===stockId);
+  s.supply=newSupply; renderAll();
+}
+function addStock(){
+  const name=document.getElementById('newStockName').value.trim();
+  const id=document.getElementById('newStockId').value.trim();
+  const price=parseInt(document.getElementById('newStockPrice').value);
+  const supply=parseInt(document.getElementById('newStockSupply').value);
+  if(!name||!id||!price||!supply) return alert('Fill all fields');
+  stocks.push({id,name,price,prevPrice:price,supply,history:[price]});
+  renderAll(); initChartForStock(stocks[stocks.length-1]);
+}
+
+// ========== Rendering ==========
+function renderParticipants(){
+  const user=users[currentUser.username];
+  let html='<tr><th>Stock</th><th>Price</th><th>Owned</th><th>Available</th><th>Qty</th><th>Actions</th></tr>';
+  stocks.forEach(s=>{
+    const up=s.price>=s.prevPrice;
+    html+=`<tr>
+      <td>${s.name}</td>
+      <td class="${up?'green':'red'}">${formatINR(s.price)}</td>
+      <td>${user.holdings[s.id]||0}</td>
+      <td>${s.supply}</td>
+      <td><input type="number" min="1" value="1" id="qty_${s.id}" style="width:70px"></td>
+      <td>
+        <button class="btn" onclick="buy('${s.id}',document.getElementById('qty_${s.id}').value)">Buy</button>
+        <button class="btn" onclick="sell('${s.id}',document.getElementById('qty_${s.id}').value)">Sell</button>
+      </td>
+    </tr>`;
+  });
+  document.getElementById('participantsTable').innerHTML=html;
+  document.getElementById('balance').textContent=formatINR(user.balance);
+}
+function renderJudge(){
+  let html='<tr><th>Stock</th><th>Price</th><th>Supply</th><th>Update</th></tr>';
+  stocks.forEach(s=>{
+    html+=`<tr>
+      <td>${s.name}</td>
+      <td><input type="number" id="setP_${s.id}" value="${s.price}"></td>
+      <td><input type="number" id="setS_${s.id}" value="${s.supply}"></td>
+      <td><button class="btn" onclick="changePrice('${s.id}',parseInt(document.getElementById('setP_${s.id}').value));changeSupply('${s.id}',parseInt(document.getElementById('setS_${s.id}').value));">Update</button></td>
+    </tr>`;
+  });
+  document.getElementById('judgeTable').innerHTML=html;
+
+  // Participants balances
+  let bal='<tr><th>Username</th><th>Balance</th></tr>';
+  for(let u in users){ if(users[u].role==='participant'){ bal+=`<tr><td>${u}</td><td>${formatINR(users[u].balance)}</td></tr>`;}}
+  document.getElementById('allBalances').innerHTML=bal;
+
+  // Holdings
+  let hold='<tr><th>User</th><th>Stock</th><th>Qty</th></tr>';
+  for(let u in users){ if(users[u].role==='participant'){ for(let sid in users[u].holdings){ if(users[u].holdings[sid]>0){ hold+=`<tr><td>${u}</td><td>${sid}</td><td>${users[u].holdings[sid]}</td></tr>`; }}}}
+  document.getElementById('holdingsTable').innerHTML=hold;
+}
+function renderMain(){
+  let html='<tr><th>Stock</th><th>Price</th><th>Status</th></tr>';
+  stocks.forEach(s=>{
+    html+=`<tr>
+      <td>${s.name}</td>
+      <td class="${s.price>=s.prevPrice?'green':'red'}">${formatINR(s.price)}</td>
+      <td>${s.price>=s.prevPrice?'📈 Up':'📉 Down'}</td>
+    </tr>`;
+  });
+  document.getElementById('mainTable').innerHTML=html;
+}
+function renderAll(){
+  if(!currentUser) return;
+  if(currentUser.role==='participant') renderParticipants();
+  if(currentUser.role==='judge') renderJudge();
+  renderMain(); updateCharts();
+}
+
+// ========== Charts ==========
+function initChartForStock(s){
+  const ctx=document.getElementById('chart_'+s.id).getContext('2d');
+  mainCharts[s.id]=new Chart(ctx,{
+    type:'line',
+    data:{labels:s.history.map((_,i)=>i+1),datasets:[{label:s.name,data:s.history,borderColor:(s.price>=s.prevPrice?'#22c55e':'#ef4444'),tension:0.3}]},
+    options:{plugins:{legend:{display:false}},scales:{x:{display:false}}}
+  });
+}
+function initMainCharts(){
+  const cont=document.getElementById('mainCharts');
+  cont.innerHTML='';
+  stocks.forEach(s=>{
+    const card=document.createElement('div'); card.className='card';
+    card.innerHTML=`<h4>${s.name}</h4><canvas id="chart_${s.id}" height="120"></canvas>`;
+    cont.appendChild(card); initChartForStock(s);
+  });
+}
+function updateCharts(){
+  stocks.forEach(s=>{
+    const ch=mainCharts[s.id]; if(!ch) return;
+    ch.data.labels=s.history.map((_,i)=>i+1);
+    ch.data.datasets[0].data=s.history;
+    ch.data.datasets[0].borderColor=(s.price>=s.prevPrice?'#22c55e':'#ef4444');
+    ch.update();
+  });
+}
+
+// ========== Events ==========
+document.getElementById('loginBtn').addEventListener('click',()=>{
+  const role=document.getElementById('role').value;
+  const username=document.getElementById('username').value.trim();
+  const pass=document.getElementById('password').value;
+  if(!users[username] || users[username].role!==role) return alert('Invalid user/role');
+  if(users[username].password!==pass) return alert('Wrong password');
+  currentUser={username,role};
+  document.getElementById('auth').classList.remove('active');
+  document.getElementById('topnav').classList.remove('hidden');
+
+  // Build role-based screens
+  const dyn=document.getElementById('dynamicScreens'); dyn.innerHTML='';
+  if(role==='participant'){
+    document.getElementById('participantsTab').classList.remove('hidden');
+    document.getElementById('judgeTab').classList.add('hidden');
+    dyn.innerHTML=`<section id="participants" class="screen">
+      <div class="row"><h2>Trade</h2><div class="right">Balance: <strong id="balance">₹0</strong></div></div>
+      <table id="participantsTable"></table>
+    </section>`;
+    show('participants');
+  } else {
+    document.getElementById('judgeTab').classList.remove('hidden');
+    document.getElementById('participantsTab').classList.add('hidden');
+    dyn.innerHTML=`<section id="judge" class="screen">
+      <h2>Judge Panel</h2>
+      <div><input id="newStockName" placeholder="Stock Name"/>
+      <input id="newStockId" placeholder="Stock ID"/>
+      <input type="number" id="newStockPrice" placeholder="Initial Price"/>
+      <input type="number" id="newStockSupply" placeholder="Supply"/>
+      <button class="btn" onclick="addStock()">Add Stock</button></div>
+      <table id="judgeTable"></table>
+      <h3>Participants Balances</h3><table id="allBalances"></table>
+      <h3>Holdings</h3><table id="holdingsTable"></table>
+    </section>`;
+    show('judge');
+  }
+  initMainCharts(); renderAll();
+});
+document.getElementById('topnav').addEventListener('click',e=>{
+  if(e.target.tagName==='BUTTON'&&e.target.dataset.target){show(e.target.dataset.target);renderAll();}
+});
+document.getElementById('logout').addEventListener('click',()=>{
+  currentUser=null;
+  document.getElementById('topnav').classList.add('hidden');
+  document.getElementById('dynamicScreens').innerHTML='';
+  show('auth');
+});
+</script>
+</body>
+</html>
